@@ -54,7 +54,11 @@ class lookaheadScheduler(baseScheduler):
                 link_ready = max(t_entangle, link_free)
                 return max(link_ready, dep_ready)
             else:
-                link_data = self.G.edges[link]
+                if self.G.has_edge(*link):
+                    link_free = self.link_free_at.get(link, 0)
+                else:
+                    # indirect link — no direct fiber, just wait for dependencies
+                    link_free = 0
                 return max(dep_ready, link_free)
         return dep_ready
     
@@ -86,12 +90,27 @@ class lookaheadScheduler(baseScheduler):
 
             link = (min(gate.module_a, gate.module_b),
                     max(gate.module_a, gate.module_b))
+            
+            if not self.G.has_edge(*link):
+                continue
+            
             link_data = self.G.edges[link]
             t_ent = link_data['t_expected']
 
             # ALAP start for entanglement = ALAP start of gate
             alap_ent_start = alap[node]
 
+            other_gates_need_link_sooner = any(
+            self.dag.nodes[other]['gate'].is_remote and
+            other != node and
+            (min(self.dag.nodes[other]['gate'].module_a,
+                 self.dag.nodes[other]['gate'].module_b),
+             max(self.dag.nodes[other]['gate'].module_a,
+                 self.dag.nodes[other]['gate'].module_b)) == link and
+            asap[other] < asap[node]
+            for other in self.dag.nodes
+        )
+            
             # if this gate is coming up within the window and link is free
             link_free = self.link_free_at.get(link, 0)
             if (asap[node] <= current_time + self.window and
@@ -101,9 +120,6 @@ class lookaheadScheduler(baseScheduler):
                 # pre-generate: entanglement ready at current_time + t_ent
                 self.entangle_ready[gate.id] = current_time + t_ent
                 self.link_free_at[link] = current_time + t_ent
-                print(f"  Pre-generating entanglement for gate {gate.id} "
-                      f"at t={current_time:.1f}, "
-                      f"ready at t={current_time + t_ent:.1f}")
                 
     def run(self):
         gates = [self.dag.nodes[n]['gate'] for n in self.dag.nodes]

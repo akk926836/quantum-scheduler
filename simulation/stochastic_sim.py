@@ -42,7 +42,12 @@ def stochastic_run(scheduler_class, G_net, original_dag,
             if gate.is_remote:
                 link = (min(gate.module_a, gate.module_b),
                         max(gate.module_a, gate.module_b))
-                gate.duration = G_net.edges[link]['t_expected'] + 1.0
+                if G_net.has_edge(*link):
+                    gate.duration = G_net.edges[link]['t_expected'] + 1.0
+                else:
+                    n_hops = nx.shortest_path_length(G_net, gate.module_a, gate.module_b)
+                    sample_edge = list(G_net.edges(data=True))[0][2]
+                    gate.duration = n_hops * sample_edge['t_expected'] + 1.0
 
         # run scheduler on copied dag
         scheduler = scheduler_class(G_net, dag_copy, **kwargs)
